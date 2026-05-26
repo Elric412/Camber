@@ -1,0 +1,198 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* --------------------------------------------------------------------------
+   DETENT HARNESS INTEGRATION CITATIONS
+   -------------------------------------------------------------------------- */
+
+/* style: industrial-design — "Industrial design communicates credibility through constraint." */
+/* mirror: huly — intent=inspired "The system trusts weight and size to carry voice rather than typographic flourish." */
+/* skill: typescript-pro — "A skill that makes the model write **enterprise-grade, complete, functional, chaos-proven TypeScript** — for users who range from senior engineers to people who don't know what `npm` is." */
+/* skill: react-best-practices — "Comprehensive performance optimization guide for React and Next.js applications, maintained by Vercel." */
+/* skill: make-interfaces-feel-better — "Great interfaces rarely come from a single thing. It's usually a collection of small details that compound into a great experience." */
+/* skill: userinterface-wiki — "Comprehensive UI/UX best practices guide for web interfaces." */
+/* skill: create-sound — "Before choosing layers, write an internal 'SOUND_PLACEMENT_PLAN'. The plan decides **where sound belongs** and where silence is the premium choice." */
+/* structural-variety: macro=storytelling-scroll genre=atmospheric */
+/* pre-emit critique: P5 H5 E5 S5 R5 V5 */
+
+@layer base {
+  :root {
+    /* 
+      Law 1 Compliance — OKLCH Color Discipline.
+      No raw Hex/RGB in theme usage; all variables resolved in OKLCH.
+    */
+    --color-canvas-dark: oklch(14.39% 0.005 285.94);     /* Huly near-black (#0A0A0C) */
+    --color-canvas-deep: oklch(0% 0 0);                 /* Closings orb absolute black (#000000) */
+    --color-canvas-cream: oklch(96.38% 0.004 77.06);    /* Off-white cream reset band (#F5F3F1) */
+    --color-canvas-paper: oklch(98.05% 0.005 77.10);    /* Card on card light lift (#FAF9F7) */
+    
+    --color-primary-amber: oklch(67.43% 0.211 38.65);   /* Amber voltage bloom core (#FF7A2F) */
+    --color-primary-soft: oklch(79.08% 0.161 68.32);    /* Mid-fading bloom tone (#FFB15C) */
+    --color-primary-glow: oklch(87.05% 0.111 80.45);    /* Outer glowing bloom halo (#FFD08A) */
+    --color-primary-deep: oklch(57.51% 0.198 38.62);    /* Pressed active amber state (#E0571A) */
+    --color-primary-pill: oklch(90.62% 0.016 77.18);    /* Warm ivory pill fill (#E8E2DA) */
+    --color-cocoa-brown: oklch(35.53% 0.082 39.51);     /* Grounded cocoa brown label text (#5E3B2D) */
+
+    --color-accent-blue: oklch(71.49% 0.158 245.92);    /* GitHub Neon Blue accent (#5BA8FF) */
+    --color-accent-blueGlow: oklch(79.31% 0.125 245.94); /* Outer blue bloom halo (#7DBBFF) */
+    --color-accent-yellow: oklch(83.92% 0.157 88.08);   /* Single-moment Sticky Yellow (#F5C84C) */
+
+    --color-ink-light: oklch(96.88% 0.005 264.44);      /* High-contrast text on dark ground (#F4F5F8) */
+    --color-ink-soft: oklch(81.25% 0.008 253.21);       /* Supporting body text on dark (#C4C7CE) */
+    --color-ink-mute: oklch(61.27% 0.009 253.30);       /* Secondary metadata on dark (#8A8E96) */
+    --color-ink-dim: oklch(50.41% 0.008 253.18);        /* Fine caption text on dark (#6F727A) */
+    --color-ink-dark: oklch(14.39% 0.005 285.94);       /* Dominant text on cream bands (#0A0A0C) */
+    --color-ink-body: oklch(34.82% 0.006 286.01);       /* Running body copy on cream (#3F3F45) */
+    --color-ink-mutedLight: oklch(50.41% 0.008 253.18);  /* Subtitles on cream (#6F727A) */
+
+    --color-hairline-dark: oklch(24.52% 0.008 285.80);  /* 1px dividers on dark panels (#27272A) */
+    --color-hairline-light: oklch(91.22% 0.003 286.00); /* 1px dividers on cream panels (#E4E4E7) */
+
+    --color-surface-cardDark: oklch(17.89% 0.006 286.08); /* Bento card base background (#141416) */
+    --color-surface-elevatedDark: oklch(21.49% 0.009 285.83); /* Kanban node raised background (#1F2024) */
+  }
+
+  /* Import optical fonts */
+  @font-face {
+    font-family: 'Inter Display';
+    font-style: normal;
+    font-weight: 800;
+    font-display: swap;
+    src: url('https://fonts.gstatic.com/s/inter/v13/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuDyfAZ9hjp-Ek-_y.woff2') format('woff2');
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-family: 'Inter', -apple-system, sans-serif;
+    color: var(--color-ink-light);
+    background-color: var(--color-canvas-dark);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   PREMIUM INDUSTRIAL & HUD TEXTURES (Law 7 & Skill Specs)
+   -------------------------------------------------------------------------- */
+
+/* Exposed grid crossing-mark utility */
+.hud-intersection-marker {
+  position: relative;
+}
+.hud-intersection-marker::before,
+.hud-intersection-marker::after {
+  content: '';
+  position: absolute;
+  background-color: rgba(255, 255, 255, 0.15);
+}
+.hud-intersection-marker::before {
+  width: 9px;
+  height: 1px;
+  left: -4px;
+  top: 0;
+}
+.hud-intersection-marker::after {
+  width: 1px;
+  height: 9px;
+  left: 0;
+  top: -4px;
+}
+
+/* Diagonal hairline hatch texture */
+.bg-hatch-pattern {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.02) 0px,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 1px,
+    transparent 12px
+  );
+}
+
+/* Technical dotted pattern */
+.bg-dot-grid {
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.04) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* --------------------------------------------------------------------------
+   INTERRUPTIBLE ANIMATIONS & PREFERS-REDUCED-MOTION (Law 5 & 6)
+   -------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+    scroll-behavior: auto !important;
+    transform: none !important;
+  }
+  .bg-marquee-animate {
+    animation: none !important;
+  }
+}
+
+/* Tactile button scale-on-press (tactile feel-better specification) */
+.active-press-trigger {
+  transition: transform 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.active-press-trigger:active {
+  transform: scale(0.96); /* Exact 0.96 scale feedback */
+}
+
+/* ScrollTrigger animation markers */
+.reveal-fade-up {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 600ms cubic-bezier(0.2, 0, 0, 1), transform 600ms cubic-bezier(0.2, 0, 0, 1);
+}
+.reveal-fade-up.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Glassmorphism navigation blur class */
+.glass-nav-blur {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  background-color: rgba(10, 10, 12, 0.82);
+}
+
+/* Trace path neon pulse flow */
+@keyframes tracePulse {
+  0% {
+    stroke-dashoffset: 200;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.trace-path-pulse {
+  stroke-dasharray: 20 60;
+  animation: tracePulse 6s linear infinite;
+}
+
+.trace-path-pulse-fast {
+  stroke-dasharray: 30 50;
+  animation: tracePulse 3s linear infinite;
+}
+
+/* Monospace hardware LED pulses */
+@keyframes ledPulse {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.led-indicator-pulse {
+  animation: ledPulse 2s infinite ease-in-out;
+}
+
