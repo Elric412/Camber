@@ -1,0 +1,69 @@
+name: Detent installer handoff release
+
+on:
+  push:
+    branches: [detent-build-ephemeral]
+
+permissions:
+  actions: read
+  contents: write
+
+env:
+  APP_VERSION: '0.1.0'
+  WINDOWS_RUN: '34245343145'
+  UBUNTU_RUN: '34246735496'
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - name: Download verified Windows artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: detent-final-windows-x64
+          path: final/windows
+          repository: Elric412/Camber
+          run-id: ${{ env.WINDOWS_RUN }}
+          github-token: ${{ github.token }}
+
+      - name: Download verified Ubuntu artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: detent-final-ubuntu-amd64
+          path: final/ubuntu
+          repository: Elric412/Camber
+          run-id: ${{ env.UBUNTU_RUN }}
+          github-token: ${{ github.token }}
+
+      - name: Canonicalize and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp final/windows/DetentLegacy-Setup-${APP_VERSION}-x64.exe release/
+          cp final/ubuntu/detent-legacy_${APP_VERSION}_amd64.deb release/
+          cd release
+          sha256sum \
+            DetentLegacy-Setup-${APP_VERSION}-x64.exe \
+            detent-legacy_${APP_VERSION}_amd64.deb > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          test -s DetentLegacy-Setup-${APP_VERSION}-x64.exe
+          test -s detent-legacy_${APP_VERSION}_amd64.deb
+          cat SHA256SUMS.txt
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="detent-legacy-native-${APP_VERSION}"
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" \
+            release/DetentLegacy-Setup-${APP_VERSION}-x64.exe \
+            release/detent-legacy_${APP_VERSION}_amd64.deb \
+            release/SHA256SUMS.txt \
+            --title "Detent Legacy native installers ${APP_VERSION}" \
+            --notes "Verified Windows x64 and Ubuntu amd64 native installer handoff. Windows was installed and version-probed on a Windows 2025 runner. Ubuntu was installed with dpkg, version-probed, and its private Python 3.12 runtime was verified on Ubuntu 22.04." \
+            --prerelease
