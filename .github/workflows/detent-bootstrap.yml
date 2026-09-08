@@ -1,53 +1,256 @@
-name: Detent ephemeral bootstrap
+name: Detent final native build
 
 on:
   push:
     branches: [detent-build-ephemeral]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect-windows-baseline:
+  windows-x64:
     runs-on: windows-2025
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
-      - name: Inspect verified baseline and installed runtime
+      - name: Build Detent Legacy Windows installer
         shell: pwsh
         env:
-          BASELINE_URL: 'https://sdmntprcentralus.oaiusercontent.com/files/00000000-f428-81f5-9fdd-68e38deab33f/raw?se=2026-09-08T15%3A21%3A02Z&sp=r&sv=2026-02-06&sr=b&scid=c964e892-0db6-525d-953e-ebf4f7d00cc2&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-08T02%3A55%3A46Z&ske=2026-09-09T02%3A55%3A46Z&sks=b&skv=2026-02-06&sig=WZh3kzOBPJ2bggzNJZPxPhL0XRxiMvkaIFzCgnN5p7o%3D'
-          DIAGNOSTICS_URL: 'https://sdmntprnznorth.oaiusercontent.com/files/00000000-0f58-820b-abdb-34c836180420/raw?se=2026-09-08T15%3A21%3A25Z&sp=r&sv=2026-02-06&sr=b&scid=37091b2a-43b6-5e72-9e31-640e163c4483&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-07T21%3A31%3A38Z&ske=2026-09-08T21%3A31%3A38Z&sks=b&skv=2026-02-06&sig=b0j0eLX5iKaT0tBsBB2mlRLgJHMUt80dzvdUi4qOihU%3D'
+          BASELINE_URL: 'https://sdmntprnznorth.oaiusercontent.com/files/00000000-edd4-820b-b9af-2631a33cd93a/raw?se=2026-09-08T15%3A35%3A34Z&sp=r&sv=2026-02-06&sr=b&scid=8160928c-0431-5be1-8a90-0754005593ac&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-08T01%3A08%3A00Z&ske=2026-09-09T01%3A08%3A00Z&sks=b&skv=2026-02-06&sig=TOYv1nsh/pZKpGzbl4rYJwesCv9nJ4QM7y5U57cMPrc%3D'
+          APP_VERSION: '0.1.0'
+          SOURCE_REVISION: '229036dd4964a3d050df7ef6b5f15838cf992578'
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = Join-Path $env:RUNNER_TEMP 'baseline.zip'
-          $diagZip = Join-Path $env:RUNNER_TEMP 'diagnostics.zip'
-          $artifact = Join-Path $env:RUNNER_TEMP 'baseline-artifact'
-          $diag = Join-Path $env:RUNNER_TEMP 'diagnostics-artifact'
-          $install = Join-Path $env:RUNNER_TEMP 'Detent Baseline Ω'
+          Set-StrictMode -Version Latest
+          $root = Join-Path $env:RUNNER_TEMP 'detent-final-windows'
+          $artifact = Join-Path $root 'baseline-artifact'
+          $baselineInstall = Join-Path $root 'baseline-install'
+          $payload = Join-Path $root 'payload'
+          $out = Join-Path $root 'out'
+          $staging = Join-Path $root 'staging'
+          New-Item -ItemType Directory -Force -Path $root,$artifact,$payload,$out | Out-Null
+          $zip = Join-Path $root 'baseline.zip'
           Invoke-WebRequest -Uri $env:BASELINE_URL -OutFile $zip
-          Invoke-WebRequest -Uri $env:DIAGNOSTICS_URL -OutFile $diagZip
           Expand-Archive -LiteralPath $zip -DestinationPath $artifact -Force
-          Expand-Archive -LiteralPath $diagZip -DestinationPath $diag -Force
-          Write-Host '=== DIAGNOSTICS ARCHIVE ==='
-          Get-ChildItem -LiteralPath $diag -Recurse | ForEach-Object { Write-Host $_.FullName }
-          Write-Host '=== BASELINE ARCHIVE ==='
-          Get-ChildItem -LiteralPath $artifact -Recurse | ForEach-Object { Write-Host $_.FullName }
-          $installer = Get-ChildItem -LiteralPath $artifact -Filter '*.exe' -Recurse | Where-Object { $_.Name -like '*Setup*' } | Select-Object -First 1
-          if ($null -eq $installer) { throw 'baseline installer not found' }
+          $baselineInstaller = Get-ChildItem -LiteralPath $artifact -Filter '*.exe' -Recurse | Where-Object { $_.Name -like '*Setup*' } | Select-Object -First 1
+          if ($null -eq $baselineInstaller) { throw 'verified baseline installer not found' }
           $psi = [System.Diagnostics.ProcessStartInfo]::new()
-          $psi.FileName = $installer.FullName
+          $psi.FileName = $baselineInstaller.FullName
           $psi.UseShellExecute = $false
           $psi.CreateNoWindow = $true
-          foreach ($arg in @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$install")) { $psi.ArgumentList.Add($arg) }
+          foreach ($arg in @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$baselineInstall")) { $psi.ArgumentList.Add($arg) }
           $p = [System.Diagnostics.Process]::Start($psi)
-          if ($null -eq $p) { throw 'failed to start baseline installer' }
+          if ($null -eq $p) { throw 'failed to start verified baseline installer' }
           $p.WaitForExit()
-          if ($p.ExitCode -ne 0) { throw "baseline install failed: $($p.ExitCode)" }
-          Write-Host '=== INSTALLED TOP LEVEL ==='
-          Get-ChildItem -LiteralPath $install -Recurse -Depth 4 | ForEach-Object { Write-Host $_.FullName }
-          Write-Host '=== PYTHON / DETENT LOCATIONS ==='
-          Get-ChildItem -LiteralPath $install -Recurse -File -Filter 'python.exe' | ForEach-Object { Write-Host "PYTHON=$($_.FullName)" }
-          Get-ChildItem -LiteralPath $install -Recurse -Directory -Filter 'detent' | ForEach-Object { Write-Host "DETENT_DIR=$($_.FullName)" }
-          Get-ChildItem -LiteralPath $install -Recurse -File -Filter '*.whl' | ForEach-Object { Write-Host "WHEEL=$($_.FullName)" }
-          Get-ChildItem -LiteralPath $install -Recurse -File -Filter 'detent-tui*' | ForEach-Object { Write-Host "TUI=$($_.FullName)" }
-          Write-Host 'Baseline inspection complete.'
+          if ($p.ExitCode -ne 0) { throw "verified baseline install failed: $($p.ExitCode)" }
+          $baselineVersion = Join-Path $baselineInstall "versions\$env:APP_VERSION"
+          if (-not (Test-Path -LiteralPath (Join-Path $baselineVersion 'runtime\python.exe'))) { throw 'verified private runtime missing' }
+          New-Item -ItemType Directory -Force -Path (Join-Path $payload 'versions'),(Join-Path $payload 'bin') | Out-Null
+          Copy-Item -LiteralPath $baselineVersion -Destination (Join-Path $payload "versions\$env:APP_VERSION") -Recurse -Force
+          $manifest = [ordered]@{
+            schema = 3
+            package = 'detent-legacy'
+            version = $env:APP_VERSION
+            distribution = 'windows-inno'
+            source_revision = $env:SOURCE_REVISION
+            runtime_base_revision = '6b5b4f0bed8b7be4cf44e11173a0f0fc8b574615'
+            architecture = 'x64'
+            python = '3.13.15'
+          }
+          $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $payload "versions\$env:APP_VERSION\runtime-manifest.json") -Encoding UTF8
+          git clone --depth 1 --branch detent-src-ephemeral https://github.com/Elric412/Camber.git $staging
+          if ($LASTEXITCODE -ne 0) { throw 'failed to fetch packaging staging branch' }
+          $launcherSrc = Join-Path $staging 'detent-overlay\packaging\windows\launcher.c'
+          $iss = Join-Path $staging 'detent-overlay\packaging\windows\installer.iss'
+          $launcherExe = Join-Path $payload 'bin\detent-legacy.exe'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vcvars = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find 'VC\Auxiliary\Build\vcvars64.bat' | Select-Object -First 1)
+          if (-not $vcvars) { throw 'Visual C++ x64 toolchain not found' }
+          $compile = "call `"$vcvars`" && cl.exe /nologo /O2 /MT /DUNICODE /D_UNICODE /Fe:`"$launcherExe`" `"$launcherSrc`" advapi32.lib user32.lib"
+          cmd.exe /d /s /c $compile
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $launcherExe)) { throw 'native launcher compilation failed' }
+          foreach ($name in @('detent.exe','dnt.exe','detent-auth.exe','detent-acp.exe','detent-mcp.exe','detent-remote.exe','detent-plugins.exe','detent-share.exe')) {
+            Copy-Item -LiteralPath $launcherExe -Destination (Join-Path $payload "bin\$name") -Force
+          }
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          $iscc = Get-ChildItem @("${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe","${env:ProgramFiles}\Inno Setup *\ISCC.exe") -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $iscc) { throw 'ISCC.exe not found after installation' }
+          & $iscc "/DMyAppVersion=$env:APP_VERSION" '/DMyNumericVersion=0.1.0.0' "/DPayloadDir=$payload" "/DOutputDir=$out" $iss
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup build failed' }
+          $final = Join-Path $out "DetentLegacy-Setup-$env:APP_VERSION-x64.exe"
+          if (-not (Test-Path -LiteralPath $final)) { throw "final installer missing: $final" }
+          $verifyDir = Join-Path $root 'verify install Ω'
+          $verify = [System.Diagnostics.ProcessStartInfo]::new()
+          $verify.FileName = $final
+          $verify.UseShellExecute = $false
+          $verify.CreateNoWindow = $true
+          foreach ($arg in @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$verifyDir")) { $verify.ArgumentList.Add($arg) }
+          $vp = [System.Diagnostics.Process]::Start($verify)
+          $vp.WaitForExit()
+          if ($vp.ExitCode -ne 0) { throw "final installer verification install failed: $($vp.ExitCode)" }
+          $cmd = Join-Path $verifyDir 'bin\detent-legacy.exe'
+          & $cmd --version
+          if ($LASTEXITCODE -ne 0) { throw 'installed Detent Legacy version probe failed' }
+          $hash = (Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $(Split-Path $final -Leaf)" | Set-Content -LiteralPath (Join-Path $out 'windows.sha256') -Encoding ascii
+          Write-Host "WINDOWS_FINAL=$final"
+          Write-Host "WINDOWS_SHA256=$hash"
+          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE\dist-windows" | Out-Null
+          Copy-Item -LiteralPath $final -Destination "$env:GITHUB_WORKSPACE\dist-windows\"
+          Copy-Item -LiteralPath (Join-Path $out 'windows.sha256') -Destination "$env:GITHUB_WORKSPACE\dist-windows\"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detent-final-windows-x64
+          path: dist-windows/*
+          if-no-files-found: error
+
+  ubuntu-amd64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.11'
+      - name: Build Detent Legacy Ubuntu package
+        shell: bash
+        env:
+          BASELINE_URL: 'https://sdmntprnznorth.oaiusercontent.com/files/00000000-edd4-820b-b9af-2631a33cd93a/raw?se=2026-09-08T15%3A35%3A34Z&sp=r&sv=2026-02-06&sr=b&scid=8160928c-0431-5be1-8a90-0754005593ac&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-08T01%3A08%3A00Z&ske=2026-09-09T01%3A08%3A00Z&sks=b&skv=2026-02-06&sig=TOYv1nsh/pZKpGzbl4rYJwesCv9nJ4QM7y5U57cMPrc%3D'
+          APP_VERSION: '0.1.0'
+          SOURCE_REVISION: '229036dd4964a3d050df7ef6b5f15838cf992578'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq innoextract unzip rsync dpkg-dev
+          ROOT="$RUNNER_TEMP/detent-final-ubuntu"
+          ART="$ROOT/baseline-artifact"
+          EXTRACT="$ROOT/extracted"
+          STAGE="$ROOT/stage"
+          OUT="$GITHUB_WORKSPACE/dist-ubuntu"
+          mkdir -p "$ART" "$EXTRACT" "$STAGE" "$OUT"
+          python - <<'PY'
+          import os, urllib.request
+          urllib.request.urlretrieve(os.environ['BASELINE_URL'], os.path.join(os.environ['RUNNER_TEMP'], 'detent-final-ubuntu', 'baseline.zip'))
+          PY
+          unzip -q "$ROOT/baseline.zip" -d "$ART"
+          INSTALLER="$(find "$ART" -type f -name '*Setup*.exe' -print -quit)"
+          test -n "$INSTALLER"
+          innoextract --silent --extract --output-dir "$EXTRACT" "$INSTALLER"
+          SITE="$(find "$EXTRACT" -type d -path '*/runtime/Lib/site-packages' -print -quit)"
+          test -n "$SITE"
+          APP="$STAGE/usr/lib/detent-legacy/app"
+          VENDOR="$STAGE/usr/lib/detent-legacy/vendor"
+          PYDEST="$STAGE/usr/lib/detent-legacy/python"
+          BIN="$STAGE/usr/lib/detent-legacy/bin"
+          mkdir -p "$APP" "$VENDOR" "$PYDEST" "$BIN" "$STAGE/usr/bin" "$STAGE/etc/detent-legacy" "$STAGE/var/lib/detent-legacy" "$STAGE/var/log/detent-legacy"
+          cp -a "$SITE/detent" "$APP/detent"
+          for item in skills agents style-library design-system-library ui-components-library assets harness scripts detent.yaml; do
+            if [ -e "$SITE/$item" ]; then cp -a "$SITE/$item" "$APP/$item"; fi
+          done
+          PYROOT="$(python -c 'import sys; print(sys.prefix)')"
+          cp -a "$PYROOT/." "$PYDEST/"
+          python -m pip install --disable-pip-version-check --no-compile --target "$VENDOR" \
+            'PyYAML==6.0.3' 'jsonschema==4.26.0' 'attrs==26.1.0' 'referencing==0.37.0' 'rpds-py==0.30.0' 'typing-extensions==4.15.0'
+          cat > "$BIN/detent-python" <<'SH'
+          #!/bin/sh
+          set -eu
+          ROOT=/usr/lib/detent-legacy
+          export PYTHONHOME="$ROOT/python"
+          export PYTHONPATH="$ROOT/app:$ROOT/vendor"
+          export PYTHONNOUSERSITE=1
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONUTF8=1
+          export DETENT_INSTALL_ROOT="$ROOT"
+          export DETENT_DISTRIBUTION=ubuntu-deb
+          export LD_LIBRARY_PATH="$ROOT/python/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec "$ROOT/python/bin/python3.12" "$@"
+          SH
+          cat > "$BIN/detent-legacy" <<'SH'
+          #!/bin/sh
+          exec /usr/lib/detent-legacy/bin/detent-python -m detent "$@"
+          SH
+          chmod 0755 "$BIN/detent-python" "$BIN/detent-legacy"
+          ln -s /usr/lib/detent-legacy/bin/detent-legacy "$STAGE/usr/bin/detent-legacy"
+          ln -s /usr/lib/detent-legacy/bin/detent-legacy "$STAGE/usr/bin/detent"
+          ln -s /usr/lib/detent-legacy/bin/detent-legacy "$STAGE/usr/bin/dnt"
+          mkdir -p "$STAGE/usr/share/detent-legacy" "$STAGE/DEBIAN"
+          python - <<'PY' > "$STAGE/usr/share/detent-legacy/runtime-manifest.json"
+          import json, os
+          print(json.dumps({'schema':3,'package':'detent-legacy','version':os.environ['APP_VERSION'],'distribution':'ubuntu-deb','source_revision':os.environ['SOURCE_REVISION'],'runtime_base_revision':'6b5b4f0bed8b7be4cf44e11173a0f0fc8b574615','architecture':'amd64','python':'3.12.11'}, indent=2))
+          PY
+          SIZE="$(du -sk "$STAGE" | awk '{print $1}')"
+          cat > "$STAGE/DEBIAN/control" <<EOF
+          Package: detent-legacy
+          Version: $APP_VERSION
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Detent <noreply@example.invalid>
+          Installed-Size: $SIZE
+          Depends: libc6 (>= 2.35), libbz2-1.0, libexpat1, libffi8, liblzma5, libncursesw6, libreadline8, libsqlite3-0, libssl3, zlib1g
+          Provides: detent
+          Conflicts: detent
+          Replaces: detent
+          Description: Detent Legacy self-contained terminal application
+           Includes a private Python runtime and does not require system Python.
+          EOF
+          cat > "$STAGE/DEBIAN/postinst" <<'SH'
+          #!/bin/sh
+          set -e
+          install -d -m 0755 /etc/detent-legacy /var/lib/detent-legacy /var/log/detent-legacy
+          exit 0
+          SH
+          chmod 0755 "$STAGE/DEBIAN/postinst"
+          PRIV="$STAGE/usr/lib/detent-legacy/python/bin/python3.12"
+          env PYTHONHOME="$STAGE/usr/lib/detent-legacy/python" PYTHONPATH="$APP:$VENDOR" LD_LIBRARY_PATH="$STAGE/usr/lib/detent-legacy/python/lib" "$PRIV" -m detent --version
+          DEB="$OUT/detent-legacy_${APP_VERSION}_amd64.deb"
+          dpkg-deb --root-owner-group --build "$STAGE" "$DEB"
+          test "$(dpkg-deb -f "$DEB" Package)" = detent-legacy
+          test "$(dpkg-deb -f "$DEB" Version)" = "$APP_VERSION"
+          test "$(dpkg-deb -f "$DEB" Architecture)" = amd64
+          sha256sum "$DEB" > "$OUT/ubuntu.sha256"
+          echo "UBUNTU_FINAL=$DEB"
+          cat "$OUT/ubuntu.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detent-final-ubuntu-amd64
+          path: dist-ubuntu/*
+          if-no-files-found: error
+
+  publish:
+    needs: [windows-x64, ubuntu-amd64]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: detent-final-windows-x64
+          path: release/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: detent-final-ubuntu-amd64
+          path: release/ubuntu
+      - name: Publish final raw installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: detent-final-0.1.0-229036d
+        run: |
+          set -euo pipefail
+          mkdir -p release/final
+          cp release/windows/DetentLegacy-Setup-0.1.0-x64.exe release/final/
+          cp release/ubuntu/detent-legacy_0.1.0_amd64.deb release/final/
+          cd release/final
+          sha256sum DetentLegacy-Setup-0.1.0-x64.exe detent-legacy_0.1.0_amd64.deb > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" DetentLegacy-Setup-0.1.0-x64.exe detent-legacy_0.1.0_amd64.deb SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" DetentLegacy-Setup-0.1.0-x64.exe detent-legacy_0.1.0_amd64.deb SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title 'Detent Legacy 0.1.0 native installers' --notes 'Windows x64 and Ubuntu amd64 native distribution build for Detent-Legacy production distribution head 229036dd4964a3d050df7ef6b5f15838cf992578.'
+          fi
+          echo 'FINAL CHECKSUMS:'
+          cat SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: detent-final-native-installers
+          path: release/final/*
+          if-no-files-found: error
