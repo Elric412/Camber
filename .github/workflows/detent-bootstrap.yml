@@ -27,7 +27,14 @@ jobs:
           Get-ChildItem -LiteralPath $artifact -Recurse | ForEach-Object { Write-Host $_.FullName }
           $installer = Get-ChildItem -LiteralPath $artifact -Filter '*.exe' -Recurse | Where-Object { $_.Name -like '*Setup*' } | Select-Object -First 1
           if ($null -eq $installer) { throw 'baseline installer not found' }
-          $p = Start-Process -FilePath $installer.FullName -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$install") -Wait -PassThru
+          $psi = [System.Diagnostics.ProcessStartInfo]::new()
+          $psi.FileName = $installer.FullName
+          $psi.UseShellExecute = $false
+          $psi.CreateNoWindow = $true
+          foreach ($arg in @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"/DIR=$install")) { $psi.ArgumentList.Add($arg) }
+          $p = [System.Diagnostics.Process]::Start($psi)
+          if ($null -eq $p) { throw 'failed to start baseline installer' }
+          $p.WaitForExit()
           if ($p.ExitCode -ne 0) { throw "baseline install failed: $($p.ExitCode)" }
           $version = '0.1.0'
           $python = Join-Path $install "versions\$version\runtime\python.exe"
