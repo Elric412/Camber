@@ -1,0 +1,209 @@
+name: Detent final installer finalize
+
+on:
+  push:
+    branches: [detent-build-ephemeral]
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  APP_VERSION: '0.1.0'
+  SOURCE_REVISION: '229036dd4964a3d050df7ef6b5f15838cf992578'
+  WINDOWS_SOURCE_RUN: '34245343145'
+
+jobs:
+  ubuntu-amd64:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - name: Download verified Windows installer artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: detent-final-windows-x64
+          path: windows-artifact
+          github-token: ${{ github.token }}
+          repository: Elric412/Camber
+          run-id: ${{ env.WINDOWS_SOURCE_RUN }}
+      - name: Set up Python 3.12.11
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.11'
+          check-latest: false
+      - name: Build and verify Ubuntu package
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq innoextract dpkg-dev
+
+          ROOT="$RUNNER_TEMP/detent-final-ubuntu"
+          EXTRACT="$ROOT/extracted"
+          STAGE="$ROOT/stage"
+          OUT="$GITHUB_WORKSPACE/dist-ubuntu"
+          mkdir -p "$EXTRACT" "$STAGE" "$OUT"
+
+          INSTALLER="$(find "$GITHUB_WORKSPACE/windows-artifact" -type f -name 'DetentLegacy-Setup-*-x64.exe' -print -quit)"
+          test -n "$INSTALLER"
+          innoextract --silent --extract --output-dir "$EXTRACT" "$INSTALLER"
+          SITE="$(find "$EXTRACT" -type d -path '*/runtime/Lib/site-packages' -print -quit)"
+          test -n "$SITE"
+
+          APP="$STAGE/usr/lib/detent-legacy/app"
+          VENDOR="$STAGE/usr/lib/detent-legacy/vendor"
+          PYDEST="$STAGE/usr/lib/detent-legacy/python"
+          BIN="$STAGE/usr/lib/detent-legacy/bin"
+          mkdir -p "$APP" "$VENDOR" "$PYDEST" "$BIN" "$STAGE/usr/bin" \
+            "$STAGE/etc/detent-legacy" "$STAGE/var/lib/detent-legacy" \
+            "$STAGE/var/log/detent-legacy" "$STAGE/usr/share/detent-legacy" "$STAGE/DEBIAN"
+
+          cp -a "$SITE/detent" "$APP/detent"
+          find "$APP" -type d -name __pycache__ -prune -exec rm -rf {} +
+          for item in skills agents style-library design-system-library ui-components-library assets harness scripts detent.yaml; do
+            if [ -e "$SITE/$item" ]; then cp -a "$SITE/$item" "$APP/$item"; fi
+          done
+
+          PYROOT="$(python -c 'import sys; print(sys.prefix)')"
+          cp -a "$PYROOT/." "$PYDEST/"
+          find "$PYDEST" -type d -name __pycache__ -prune -exec rm -rf {} + || true
+          rm -rf "$PYDEST/lib/python3.12/site-packages"/*
+
+          python -m pip install --disable-pip-version-check --no-compile --target "$VENDOR" \
+            'PyYAML==6.0.3' \
+            'jsonschema==4.26.0' \
+            'attrs==26.1.0' \
+            'jsonschema-specifications==2025.9.1' \
+            'referencing==0.37.0' \
+            'rpds-py==2026.6.3' \
+            'typing-extensions==4.16.0'
+
+          cat > "$BIN/detent-python" <<'SH'
+          #!/bin/sh
+          set -eu
+          ROOT=/usr/lib/detent-legacy
+          export PYTHONHOME="$ROOT/python"
+          export PYTHONPATH="$ROOT/app:$ROOT/vendor"
+          export PYTHONNOUSERSITE=1
+          export PYTHONSAFEPATH=1
+          export PYTHONDONTWRITEBYTECODE=1
+          export PYTHONUTF8=1
+          export DETENT_INSTALL_ROOT="$ROOT"
+          export DETENT_DISTRIBUTION=ubuntu-deb
+          export LD_LIBRARY_PATH="$ROOT/python/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          exec "$ROOT/python/bin/python3.12" "$@"
+          SH
+          cat > "$BIN/detent-legacy" <<'SH'
+          #!/bin/sh
+          exec /usr/lib/detent-legacy/bin/detent-python -m detent "$@"
+          SH
+          chmod 0755 "$BIN/detent-python" "$BIN/detent-legacy"
+          ln -s /usr/lib/detent-legacy/bin/detent-legacy "$STAGE/usr/bin/detent-legacy"
+          ln -s /usr/lib/detent-legacy/bin/detent-legacy "$STAGE/usr/bin/detent"
+          ln -s /usr/lib/detent-legacy/bin/detent-legacy "$STAGE/usr/bin/dnt"
+
+          python - <<'PY' > "$STAGE/usr/share/detent-legacy/runtime-manifest.json"
+          import json, os
+          print(json.dumps({
+              'schema': 3,
+              'package': 'detent-legacy',
+              'version': os.environ['APP_VERSION'],
+              'distribution': 'ubuntu-deb',
+              'source_revision': os.environ['SOURCE_REVISION'],
+              'runtime_base_revision': '6b5b4f0bed8b7be4cf44e11173a0f0fc8b574615',
+              'architecture': 'amd64',
+              'python': '3.12.11',
+          }, indent=2))
+          PY
+
+          SIZE="$(du -sk "$STAGE" | awk '{print $1}')"
+          cat > "$STAGE/DEBIAN/control" <<EOF
+          Package: detent-legacy
+          Version: $APP_VERSION
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Detent <noreply@example.invalid>
+          Installed-Size: $SIZE
+          Depends: libc6 (>= 2.35), libbz2-1.0, libexpat1, libffi8, liblzma5, libncursesw6, libreadline8, libsqlite3-0, libssl3, zlib1g
+          Provides: detent
+          Conflicts: detent
+          Replaces: detent
+          Description: Detent Legacy self-contained terminal application
+           Includes a private Python runtime and does not require system Python.
+          EOF
+          cat > "$STAGE/DEBIAN/postinst" <<'SH'
+          #!/bin/sh
+          set -e
+          install -d -m 0755 /etc/detent-legacy /var/lib/detent-legacy /var/log/detent-legacy
+          exit 0
+          SH
+          chmod 0755 "$STAGE/DEBIAN/postinst"
+
+          PRIV="$STAGE/usr/lib/detent-legacy/python/bin/python3.12"
+          env PYTHONHOME="$STAGE/usr/lib/detent-legacy/python" \
+              PYTHONPATH="$APP:$VENDOR" \
+              PYTHONNOUSERSITE=1 \
+              PYTHONSAFEPATH=1 \
+              LD_LIBRARY_PATH="$STAGE/usr/lib/detent-legacy/python/lib" \
+              "$PRIV" -m detent --version
+
+          DEB="$OUT/detent-legacy_${APP_VERSION}_amd64.deb"
+          dpkg-deb --root-owner-group --build "$STAGE" "$DEB"
+          test "$(dpkg-deb -f "$DEB" Package)" = detent-legacy
+          test "$(dpkg-deb -f "$DEB" Version)" = "$APP_VERSION"
+          test "$(dpkg-deb -f "$DEB" Architecture)" = amd64
+          ! dpkg-deb -f "$DEB" Depends | grep -Eiq '(^|, )[[:space:]]*python(3|3\.[0-9]+)?([[:space:]]|,|$)'
+
+          sudo dpkg -i "$DEB"
+          /usr/bin/detent-legacy --version
+          test -x /usr/lib/detent-legacy/python/bin/python3.12
+          /usr/lib/detent-legacy/python/bin/python3.12 -I -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+
+          sha256sum "$DEB" > "$OUT/ubuntu.sha256"
+          cat "$OUT/ubuntu.sha256"
+      - name: Upload Ubuntu package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: detent-final-ubuntu-amd64
+          path: dist-ubuntu/*
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: ubuntu-amd64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Download verified Windows artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: detent-final-windows-x64
+          path: final
+          github-token: ${{ github.token }}
+          repository: Elric412/Camber
+          run-id: ${{ env.WINDOWS_SOURCE_RUN }}
+      - name: Download Ubuntu artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: detent-final-ubuntu-amd64
+          path: final
+      - name: Verify final checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd final
+          cat windows.sha256 ubuntu.sha256 > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
+          test -s DetentLegacy-Setup-${APP_VERSION}-x64.exe
+          test -s detent-legacy_${APP_VERSION}_amd64.deb
+          rm -f windows.sha256 ubuntu.sha256
+          ls -lh
+          cat SHA256SUMS.txt
+      - name: Upload final installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: detent-legacy-final-installers
+          path: final/*
+          if-no-files-found: error
+          retention-days: 90
