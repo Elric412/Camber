@@ -59,11 +59,12 @@ jobs:
         run: |
           set -euo pipefail
           TAG="detent-legacy-native-${APP_VERSION}"
-          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release delete "$TAG" --repo Elric412/Camber --yes --cleanup-tag || true
           gh release create "$TAG" \
             release/DetentLegacy-Setup-${APP_VERSION}-x64.exe \
             release/detent-legacy_${APP_VERSION}_amd64.deb \
             release/SHA256SUMS.txt \
+            --repo Elric412/Camber \
             --title "Detent Legacy native installers ${APP_VERSION}" \
             --notes "Verified Windows x64 and Ubuntu amd64 native installer handoff. Windows was installed and version-probed on a Windows 2025 runner. Ubuntu was installed with dpkg, version-probed, and its private Python 3.12 runtime was verified on Ubuntu 22.04." \
             --prerelease
