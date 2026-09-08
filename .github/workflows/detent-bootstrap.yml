@@ -8,22 +8,29 @@ permissions:
   contents: read
 
 jobs:
-  bootstrap-windows:
+  inspect-windows-baseline:
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
-      - name: Recover verified Detent runtime baseline
+      - name: Inspect verified baseline and installed runtime
         shell: pwsh
         env:
-          BASELINE_URL: 'https://sdmntprcentralus.oaiusercontent.com/files/00000000-da84-81f5-b5ef-a8e331d68283/raw?se=2026-09-08T14%3A16%3A22Z&sp=r&sv=2026-02-06&sr=b&scid=453bb08b-8a66-53c7-9db4-4dd0e99d0238&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-08T02%3A55%3A40Z&ske=2026-09-09T02%3A55%3A40Z&sks=b&skv=2026-02-06&sig=lqo4fE%2Bxo6D0VCu6t2v2U9yl6GW1WiTE7GNFUwunkL0%3D'
+          BASELINE_URL: 'https://sdmntprcentralus.oaiusercontent.com/files/00000000-f428-81f5-9fdd-68e38deab33f/raw?se=2026-09-08T15%3A21%3A02Z&sp=r&sv=2026-02-06&sr=b&scid=c964e892-0db6-525d-953e-ebf4f7d00cc2&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-08T02%3A55%3A46Z&ske=2026-09-09T02%3A55%3A46Z&sks=b&skv=2026-02-06&sig=WZh3kzOBPJ2bggzNJZPxPhL0XRxiMvkaIFzCgnN5p7o%3D'
+          DIAGNOSTICS_URL: 'https://sdmntprnznorth.oaiusercontent.com/files/00000000-0f58-820b-abdb-34c836180420/raw?se=2026-09-08T15%3A21%3A25Z&sp=r&sv=2026-02-06&sr=b&scid=37091b2a-43b6-5e72-9e31-640e163c4483&skoid=27fbae2c-124f-4566-a0d8-1b07a5a41c53&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-09-07T21%3A31%3A38Z&ske=2026-09-08T21%3A31%3A38Z&sks=b&skv=2026-02-06&sig=b0j0eLX5iKaT0tBsBB2mlRLgJHMUt80dzvdUi4qOihU%3D'
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = Join-Path $env:RUNNER_TEMP 'detent-pr158.zip'
-          $artifact = Join-Path $env:RUNNER_TEMP 'detent-artifact'
+          $zip = Join-Path $env:RUNNER_TEMP 'baseline.zip'
+          $diagZip = Join-Path $env:RUNNER_TEMP 'diagnostics.zip'
+          $artifact = Join-Path $env:RUNNER_TEMP 'baseline-artifact'
+          $diag = Join-Path $env:RUNNER_TEMP 'diagnostics-artifact'
           $install = Join-Path $env:RUNNER_TEMP 'Detent Baseline Ω'
           Invoke-WebRequest -Uri $env:BASELINE_URL -OutFile $zip
+          Invoke-WebRequest -Uri $env:DIAGNOSTICS_URL -OutFile $diagZip
           Expand-Archive -LiteralPath $zip -DestinationPath $artifact -Force
-          Write-Host 'Artifact files:'
+          Expand-Archive -LiteralPath $diagZip -DestinationPath $diag -Force
+          Write-Host '=== DIAGNOSTICS ARCHIVE ==='
+          Get-ChildItem -LiteralPath $diag -Recurse | ForEach-Object { Write-Host $_.FullName }
+          Write-Host '=== BASELINE ARCHIVE ==='
           Get-ChildItem -LiteralPath $artifact -Recurse | ForEach-Object { Write-Host $_.FullName }
           $installer = Get-ChildItem -LiteralPath $artifact -Filter '*.exe' -Recurse | Where-Object { $_.Name -like '*Setup*' } | Select-Object -First 1
           if ($null -eq $installer) { throw 'baseline installer not found' }
@@ -36,15 +43,11 @@ jobs:
           if ($null -eq $p) { throw 'failed to start baseline installer' }
           $p.WaitForExit()
           if ($p.ExitCode -ne 0) { throw "baseline install failed: $($p.ExitCode)" }
-          $version = '0.1.0'
-          $python = Join-Path $install "versions\$version\runtime\python.exe"
-          if (-not (Test-Path -LiteralPath $python)) { throw "private runtime missing: $python" }
-          & $python -I -B -X utf8 -c "import detent,sys; print(detent.__version__); print(detent.__file__); print(sys.executable)"
-          if ($LASTEXITCODE -ne 0) { throw 'private runtime probe failed' }
-          $root = Join-Path $install "versions\$version"
-          foreach ($required in @('runtime','skills','agents','style-library','design-system-library','ui-components-library','assets','harness','detent.yaml')) {
-            $candidate = Join-Path $root $required
-            if (-not (Test-Path -LiteralPath $candidate)) { throw "baseline resource missing: $required" }
-          }
-          Write-Host "DETENT_BASELINE_ROOT=$root"
-          Write-Host 'Detent verified baseline recovered successfully.'
+          Write-Host '=== INSTALLED TOP LEVEL ==='
+          Get-ChildItem -LiteralPath $install -Recurse -Depth 4 | ForEach-Object { Write-Host $_.FullName }
+          Write-Host '=== PYTHON / DETENT LOCATIONS ==='
+          Get-ChildItem -LiteralPath $install -Recurse -File -Filter 'python.exe' | ForEach-Object { Write-Host "PYTHON=$($_.FullName)" }
+          Get-ChildItem -LiteralPath $install -Recurse -Directory -Filter 'detent' | ForEach-Object { Write-Host "DETENT_DIR=$($_.FullName)" }
+          Get-ChildItem -LiteralPath $install -Recurse -File -Filter '*.whl' | ForEach-Object { Write-Host "WHEEL=$($_.FullName)" }
+          Get-ChildItem -LiteralPath $install -Recurse -File -Filter 'detent-tui*' | ForEach-Object { Write-Host "TUI=$($_.FullName)" }
+          Write-Host 'Baseline inspection complete.'
