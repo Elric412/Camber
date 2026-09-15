@@ -54,12 +54,7 @@ jobs:
           clone=fail
           apiquery=fail
           if curl -fsSL "$signed" -o "$RUNNER_TEMP/one"; then first=ok; fi
-          token="$(python3 - "$signed" <<'PY'
-import sys, urllib.parse
-u=urllib.parse.urlparse(sys.argv[1])
-print(urllib.parse.parse_qs(u.query).get('token',[''])[0])
-PY
-)"
+          token="$(python3 -c 'import sys,urllib.parse; u=urllib.parse.urlparse(sys.argv[1]); print(urllib.parse.parse_qs(u.query).get("token",[""])[0])' "$signed")"
           if [ -n "$token" ] && curl -fsSL "https://raw.githubusercontent.com/Elric412/Detent/release-installers/package.json?token=$token" -o "$RUNNER_TEMP/pkg"; then
             if grep -q '"name": "detent"' "$RUNNER_TEMP/pkg"; then cross=ok; fi
           fi
