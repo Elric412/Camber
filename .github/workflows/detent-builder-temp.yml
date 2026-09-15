@@ -1,0 +1,25 @@
+name: Detent Builder Temp
+
+on:
+  push:
+    branches: [detent-builder-temp]
+
+permissions:
+  contents: read
+
+jobs:
+  probe-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          uname -a
+          echo "public runner ready"
+  probe-windows:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - shell: pwsh
+        run: |
+          Get-ComputerInfo | Select-Object WindowsProductName, OsArchitecture
+          Write-Host "public runner ready"
