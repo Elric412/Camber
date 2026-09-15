@@ -9,7 +9,7 @@ permissions:
   issues: write
 
 jobs:
-  token-scope-probe:
+  archive-scope-probe:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -26,8 +26,7 @@ jobs:
           openssl pkey -in "$RUNNER_TEMP/handoff.pem" -pubout -out "$RUNNER_TEMP/handoff.pub"
           pub="$(base64 -w0 "$RUNNER_TEMP/handoff.pub")"
           gh api "repos/$GITHUB_REPOSITORY/issues/$HANDOFF_ISSUE/comments" -f body="PUBKEY:${GITHUB_RUN_ID}:${pub}" >/dev/null
-
-      - name: Receive encrypted private URL and test access scope
+      - name: Probe archive endpoints
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -36,40 +35,20 @@ jobs:
           cipher=""
           for _ in $(seq 1 100); do
             body="$(gh api "repos/$GITHUB_REPOSITORY/issues/$HANDOFF_ISSUE/comments" --jq ".[] | select(.body | startswith(\"CIPHERTEXT:${GITHUB_RUN_ID}:\")) | .body" | tail -n1 || true)"
-            if [ -n "$body" ]; then
-              cipher="${body#CIPHERTEXT:${GITHUB_RUN_ID}:}"
-              break
-            fi
+            if [ -n "$body" ]; then cipher="${body#CIPHERTEXT:${GITHUB_RUN_ID}:}"; break; fi
             sleep 5
           done
           test -n "$cipher"
           printf '%s' "$cipher" | base64 -d > "$RUNNER_TEMP/cipher.bin"
-          openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/handoff.pem" -in "$RUNNER_TEMP/cipher.bin" -out "$RUNNER_TEMP/secret.txt" \
-            -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256
+          openssl pkeyutl -decrypt -inkey "$RUNNER_TEMP/handoff.pem" -in "$RUNNER_TEMP/cipher.bin" -out "$RUNNER_TEMP/secret.txt" -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256
           signed="$(cat "$RUNNER_TEMP/secret.txt")"
-
-          first=fail
-          cross=fail
-          bearer=fail
-          clone=fail
-          apiquery=fail
-          if curl -fsSL "$signed" -o "$RUNNER_TEMP/one"; then first=ok; fi
           token="$(python3 -c 'import sys,urllib.parse; u=urllib.parse.urlparse(sys.argv[1]); print(urllib.parse.parse_qs(u.query).get("token",[""])[0])' "$signed")"
-          if [ -n "$token" ] && curl -fsSL "https://raw.githubusercontent.com/Elric412/Detent/release-installers/package.json?token=$token" -o "$RUNNER_TEMP/pkg"; then
-            if grep -q '"name": "detent"' "$RUNNER_TEMP/pkg"; then cross=ok; fi
-          fi
-          if [ -n "$token" ] && curl -fsSL -H "Authorization: Bearer $token" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Elric412/Detent" -o "$RUNNER_TEMP/meta"; then
-            if grep -q '"private"' "$RUNNER_TEMP/meta"; then bearer=ok; fi
-          fi
-          if [ -n "$token" ] && curl -fsSL "https://api.github.com/repos/Elric412/Detent?token=$token" -o "$RUNNER_TEMP/meta-query"; then
-            if grep -q '"private"' "$RUNNER_TEMP/meta-query"; then apiquery=ok; fi
-          fi
+          first=fail; codeload=fail; archive=fail; apiarchive=fail; publictoken=fail
+          if curl -fsSL "$signed" -o "$RUNNER_TEMP/one"; then first=ok; fi
           if [ -n "$token" ]; then
-            set +e
-            GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone --depth=1 --branch release-installers "https://x-access-token:${token}@github.com/Elric412/Detent.git" "$RUNNER_TEMP/repo" >/dev/null 2>&1
-            rc=$?
-            set -e
-            if [ "$rc" -eq 0 ]; then clone=ok; fi
+            if curl -fsSL --max-time 60 "https://codeload.github.com/Elric412/Detent/zip/refs/heads/release-installers?token=$token" -o "$RUNNER_TEMP/codeload.zip" && [ "$(stat -c %s "$RUNNER_TEMP/codeload.zip")" -gt 1000000 ]; then codeload=ok; fi
+            if curl -fsSL --max-time 60 "https://github.com/Elric412/Detent/archive/refs/heads/release-installers.zip?token=$token" -o "$RUNNER_TEMP/archive.zip" && [ "$(stat -c %s "$RUNNER_TEMP/archive.zip")" -gt 1000000 ]; then archive=ok; fi
+            if curl -fsSL --max-time 60 "https://api.github.com/repos/Elric412/Detent/zipball/release-installers?token=$token" -o "$RUNNER_TEMP/api.zip" && [ "$(stat -c %s "$RUNNER_TEMP/api.zip")" -gt 1000000 ]; then apiarchive=ok; fi
+            if curl -fsSL -H "Authorization: token $token" "https://api.github.com/repos/Elric412/Detent/contents/package.json" -o "$RUNNER_TEMP/pubtok"; then publictoken=ok; fi
           fi
-          gh api "repos/$GITHUB_REPOSITORY/issues/$HANDOFF_ISSUE/comments" \
-            -f body="RESULT:${GITHUB_RUN_ID}:first=${first},cross=${cross},bearer=${bearer},apiquery=${apiquery},clone=${clone}" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/issues/$HANDOFF_ISSUE/comments" -f body="ARCHIVERESULT:${GITHUB_RUN_ID}:first=${first},codeload=${codeload},archive=${archive},apiarchive=${apiarchive},publictoken=${publictoken}" >/dev/null
